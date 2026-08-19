@@ -1,984 +1,601 @@
-import React, { useState, useEffect, useContext, createContext, useMemo } from 'react';
-import { 
-  AlertTriangle, 
-  PhoneCall, 
-  MapPin, 
-  Navigation, 
-  ShieldAlert, 
-  Activity, 
-  User, 
-  Bell, 
-  Settings, 
-  FileText, 
-  Droplet, 
-  Users, 
-  Clock, 
-  CheckCircle2, 
-  Radio, 
-  Truck, 
-  ChevronRight, 
-  X, 
-  Menu, 
-  Share2, 
-  Send,
-  HeartPulse,
-  TrendingUp,
-  Award
-} from 'lucide-react';
-
-// ============================================================================
-// 1. CONTEXT & STATE ENGINE (EmergencyContext)
-// ============================================================================
-
-const EmergencyContext = createContext(null);
-
-const STORAGE_KEY = 'RESQLINK_ACTIVE_EMERGENCY';
-const HISTORY_KEY = 'RESQLINK_EMERGENCY_HISTORY';
-
-export const EmergencyProvider = ({ children }) => {
-  const [activeEmergency, setActiveEmergency] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-
-  const [history, setHistory] = useState(() => {
-    try {
-      const saved = localStorage.getItem(HISTORY_KEY);
-      return saved ? JSON.parse(saved) : [
-        {
-          id: 'EMG-8941',
-          type: 'Cardiac Distress',
-          timestamp: '2026-08-18 14:32',
-          status: 'COMPLETED',
-          driver: 'Michael Chen',
-          vehicle: 'TN 58 ZZ 9900',
-          location: { address: 'Anna Nagar Main Rd, Madurai' }
-        }
-      ];
-    } catch {
-      return [];
-    }
-  });
-
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: 'System Status', message: 'Hospital Dispatch Grid Online', time: 'Just now', read: false },
-    { id: 2, title: 'Health Record', message: 'Blood Panel updated yesterday', time: '1d ago', read: true }
-  ]);
-
-  // Synchronize localStorage
-  useEffect(() => {
-    if (activeEmergency) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(activeEmergency));
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  }, [activeEmergency]);
-
-  useEffect(() => {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-  }, [history]);
-
-  // Automated Dispatch Simulator for rapid frontend preview (No 5 real minutes wait)
-  useEffect(() => {
-    if (!activeEmergency) return;
-
-    let timer;
-    if (activeEmergency.status === 'SEARCHING AMBULANCE') {
-      timer = setTimeout(() => {
-        setActiveEmergency(prev => prev ? ({
-          ...prev,
-          status: 'AMBULANCE ASSIGNED',
-          driver: 'John Driver',
-          driverPhone: '+91 98765 43210',
-          ambulance: 'TN 58 AB 1234',
-          eta: '5 min',
-          distance: '2.4 km',
-          assignedAt: new Date().toLocaleTimeString(),
-          driverCoords: { lat: 9.9252, lng: 78.1198 }
-        }) : null);
-
-        addNotification('Ambulance Assigned', 'Unit TN 58 AB 1234 is en route to your location.');
-      }, 3500);
-    }
-
-    return () => clearTimeout(timer);
-  }, [activeEmergency?.status]);
-
-  const addNotification = (title, message) => {
-    setNotifications(prev => [
-      { id: Date.now(), title, message, time: 'Just now', read: false },
-      ...prev
-    ]);
-  };
-
-  const triggerSOS = (sosData) => {
-    const newEmergency = {
-      id: `EMG-${Math.floor(1000 + Math.random() * 9000)}`,
-      type: sosData.type || 'General Medical Alert',
-      priority: sosData.priority || 'CRITICAL',
-      message: sosData.message || 'Immediate medical attention requested.',
-      location: sosData.location || {
-        lat: 9.9312,
-        lng: 78.1217,
-        address: 'Madurai Central Grid, Tamil Nadu'
-      },
-      status: 'SEARCHING AMBULANCE',
-      createdAt: new Date().toLocaleTimeString(),
-      patientName: 'Alex Mercer',
-      patientBlood: 'O+ Positive',
-      patientAge: 34
-    };
-
-    setActiveEmergency(newEmergency);
-    addNotification('🚨 SOS Broadcast Sent', 'Control Room notified. Searching for nearest ALS Unit.');
-  };
-
-  const updateEmergencyStatus = (newStatus) => {
-    if (!activeEmergency) return;
-
-    if (newStatus === 'COMPLETED') {
-      setHistory(prev => [{ ...activeEmergency, status: 'COMPLETED', completedAt: new Date().toLocaleTimeString() }, ...prev]);
-      setActiveEmergency(null);
-      addNotification('Emergency Completed', 'Patient handover completed. Case archived.');
-    } else {
-      setActiveEmergency(prev => ({ ...prev, status: newStatus }));
-      addNotification('Status Update', `Emergency status transitioned to: ${newStatus}`);
-    }
-  };
-
-  const cancelEmergency = () => {
-    setActiveEmergency(null);
-    addNotification('SOS Cancelled', 'Emergency broadcast cancelled by user.');
-  };
-
-  return (
-    <EmergencyContext.Provider value={{
-      activeEmergency,
-      history,
-      notifications,
-      triggerSOS,
-      updateEmergencyStatus,
-      cancelEmergency,
-      addNotification
-    }}>
-      {children}
-    </EmergencyContext.Provider>
-  );
-};
-
-export const useEmergency = () => useContext(EmergencyContext);
-
-// ============================================================================
-// 2. GEOLOCATION UTILITIES
-// ============================================================================
-
-const fetchBrowserLocation = () => {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      resolve({
-        lat: 9.9252,
-        lng: 78.1198,
-        address: 'Madurai City Center (Fallback)',
-        error: 'Geolocation unsupported'
-      });
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        resolve({
-          lat: Number(position.coords.latitude.toFixed(4)),
-          lng: Number(position.coords.longitude.toFixed(4)),
-          address: `Lat: ${position.coords.latitude.toFixed(3)}, Lng: ${position.coords.longitude.toFixed(3)}`
-        });
-      },
-      () => {
-        resolve({
-          lat: 9.9312,
-          lng: 78.1217,
-          address: 'Madurai, TN (GPS Default)'
-        });
-      },
-      { timeout: 8000, enableHighAccuracy: true }
-    );
-  });
-};
-
-// ============================================================================
-// 3. UI COMPONENTS: SOS MODAL & MAP POPUP
-// ============================================================================
-
-const SOSModal = ({ isOpen, onClose }) => {
-  const { triggerSOS } = useEmergency();
-  const [type, setType] = useState('Cardiac / Chest Pain');
-  const [priority, setPriority] = useState('CRITICAL');
-  const [message, setMessage] = useState('');
-  const [location, setLocation] = useState(null);
-  const [locating, setLocating] = useState(true);
-
-  useEffect(() => {
-    if (isOpen) {
-      setLocating(true);
-      fetchBrowserLocation().then(loc => {
-        setLocation(loc);
-        setLocating(false);
-      });
-    }
-  }, [isOpen]);
-
-  if (!isOpen) return null;
-
-  const handleActivate = () => {
-    triggerSOS({ type, priority, message, location });
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-lg bg-slate-900 border border-rose-500/40 rounded-3xl p-6 md:p-8 shadow-2xl shadow-rose-950/60 text-slate-100">
-        <button 
-          onClick={onClose} 
-          className="absolute top-5 right-5 text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-800 transition"
-        >
-          <X className="w-6 h-6" />
-        </button>
-
-        <div className="flex items-center space-x-3 mb-6">
-          <div className="p-3 bg-rose-500/20 text-rose-500 rounded-2xl ring-2 ring-rose-500/40 animate-pulse">
-            <AlertTriangle className="w-8 h-8" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-black tracking-tight text-white">EMERGENCY SOS</h2>
-            <p className="text-xs text-rose-400 font-medium tracking-wide uppercase">Priority Dispatch Network</p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Emergency Nature</label>
-            <select 
-              value={type} 
-              onChange={(e) => setType(e.target.value)}
-              className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-rose-500"
-            >
-              <option>Cardiac / Chest Pain</option>
-              <option>Severe Trauma / Road Accident</option>
-              <option>Respiratory Distress</option>
-              <option>Stroke / Neurological</option>
-              <option>Unconscious / Critical</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Triage Severity</label>
-            <div className="grid grid-cols-3 gap-2">
-              {['CRITICAL', 'URGENT', 'STANDARD'].map((p) => (
-                <button
-                  type="button"
-                  key={p}
-                  onClick={() => setPriority(p)}
-                  className={`py-2.5 text-xs font-black rounded-xl border transition ${
-                    priority === p 
-                      ? 'bg-rose-600 border-rose-500 text-white shadow-lg shadow-rose-900/50' 
-                      : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Dispatched Location</label>
-            <div className="bg-slate-800/60 border border-slate-700/80 rounded-xl p-3 flex items-center space-x-3 text-xs text-slate-300">
-              <MapPin className="w-5 h-5 text-rose-500 shrink-0" />
-              <div className="truncate">
-                {locating ? (
-                  <span className="text-slate-500 animate-pulse">Acquiring GPS coordinates...</span>
-                ) : (
-                  <span>{location?.address} (Lat: {location?.lat}, Lng: {location?.lng})</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Emergency Note (Optional)</label>
-            <input 
-              type="text" 
-              placeholder="e.g. 2nd Floor, patient is unconscious" 
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500"
-            />
-          </div>
-
-          <div className="pt-3 grid grid-cols-2 gap-3">
-            <button
-              onClick={onClose}
-              className="w-full py-3.5 rounded-xl font-bold text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleActivate}
-              className="w-full py-3.5 rounded-xl font-black text-sm bg-rose-600 hover:bg-rose-500 text-white shadow-xl shadow-rose-900/60 transition flex items-center justify-center space-x-2"
-            >
-              <span>CONFIRM SOS</span>
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const LiveMapModal = ({ emergency, onClose }) => {
-  const [countdown, setCountdown] = useState(300); // 5 min in seconds
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCountdown((prev) => (prev > 10 ? prev - 5 : 10));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const minutes = Math.floor(countdown / 60);
-  const seconds = countdown % 60;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-700/80 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row max-h-[90vh]">
-        <button 
-          onClick={onClose} 
-          className="absolute top-4 right-4 z-20 text-slate-400 hover:text-white p-2 rounded-full bg-slate-800/90 border border-slate-700"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        {/* Visual Map Render Simulation */}
-        <div className="flex-1 bg-slate-950 p-6 relative flex flex-col justify-between min-h-[280px] md:min-h-[460px] overflow-hidden border-b md:border-b-0 md:border-r border-slate-800">
-          <div className="absolute inset-0 bg-[radial-gradient(#334155_1px,transparent_1px)] [background-size:16px_16px] opacity-30"></div>
-          
-          {/* Simulated Map Route Lines */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-3/4 h-3/4 border-2 border-dashed border-cyan-500/40 rounded-full animate-[spin_40s_linear_infinite]"></div>
-          </div>
-
-          <div className="relative z-10 flex items-center justify-between">
-            <span className="px-3 py-1 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-xs font-bold rounded-full flex items-center space-x-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-              <span>LIVE SATELLITE TELEMETRY</span>
-            </span>
-            <span className="text-xs font-mono text-slate-400">{emergency.location?.address}</span>
-          </div>
-
-          {/* Map Node Icons */}
-          <div className="relative z-10 flex items-center justify-around my-auto">
-            <div className="flex flex-col items-center">
-              <div className="w-12 h-12 bg-rose-600/30 border-2 border-rose-500 rounded-2xl flex items-center justify-center text-rose-400 shadow-lg shadow-rose-950 animate-bounce">
-                <MapPin className="w-6 h-6" />
-              </div>
-              <span className="text-xs font-bold text-slate-300 mt-2">Patient</span>
-              <span className="text-[10px] text-slate-500 font-mono">You</span>
-            </div>
-
-            <div className="flex-1 mx-4 flex flex-col items-center">
-              <div className="w-full h-1 bg-gradient-to-r from-rose-500 via-yellow-500 to-emerald-500 rounded-full relative">
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-900 border border-yellow-500 px-2 py-0.5 rounded text-[10px] text-yellow-400 font-bold">
-                  {emergency.distance || '2.4 km'}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-col items-center">
-              <div className="w-12 h-12 bg-emerald-600/30 border-2 border-emerald-500 rounded-2xl flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-950 animate-pulse">
-                <Truck className="w-6 h-6" />
-              </div>
-              <span className="text-xs font-bold text-slate-300 mt-2">{emergency.ambulance || 'Unit 12'}</span>
-              <span className="text-[10px] text-emerald-400 font-mono">En Route</span>
-            </div>
-          </div>
-
-          <div className="relative z-10 bg-slate-900/90 backdrop-blur-md p-3 rounded-2xl border border-slate-800 flex items-center justify-between text-xs">
-            <div className="flex items-center space-x-2 text-slate-300">
-              <Radio className="w-4 h-4 text-emerald-400 animate-spin" />
-              <span>ALS Vehicle Signal: 98% Strong</span>
-            </div>
-            <span className="text-slate-400 font-mono">Speed: 54 km/h</span>
-          </div>
-        </div>
-
-        {/* Dispatch & Driver Meta */}
-        <div className="w-full md:w-80 p-6 bg-slate-900 flex flex-col justify-between space-y-6">
-          <div>
-            <div className="border-b border-slate-800 pb-4 mb-4">
-              <span className="text-xs uppercase font-bold tracking-widest text-slate-400">Estimated Arrival</span>
-              <div className="flex items-baseline space-x-2 mt-1">
-                <h3 className="text-4xl font-black text-white font-mono">{minutes}:{seconds < 10 ? `0${seconds}` : seconds}</h3>
-                <span className="text-xs font-bold text-emerald-400 uppercase">Minutes</span>
-              </div>
-            </div>
-
-            <div className="space-y-3.5">
-              <div className="bg-slate-800/60 p-3 rounded-2xl border border-slate-700/60 flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold">
-                  👨‍✈️
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-white">{emergency.driver || 'John Driver'}</h4>
-                  <p className="text-xs text-slate-400">Certified Paramedic Tier-1</p>
-                </div>
-              </div>
-
-              <div className="bg-slate-800/60 p-3 rounded-2xl border border-slate-700/60 flex items-center justify-between text-xs">
-                <span className="text-slate-400">Ambulance No:</span>
-                <span className="font-mono font-bold text-white bg-slate-900 px-2 py-1 rounded border border-slate-700">
-                  {emergency.ambulance || 'TN 58 AB 1234'}
-                </span>
-              </div>
-
-              <div className="bg-slate-800/60 p-3 rounded-2xl border border-slate-700/60 flex items-center justify-between text-xs">
-                <span className="text-slate-400">Emergency Type:</span>
-                <span className="font-bold text-rose-400">{emergency.type}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <a 
-              href={`tel:${emergency.driverPhone || '108'}`} 
-              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-sm flex items-center justify-center space-x-2 shadow-lg shadow-emerald-950 transition"
-            >
-              <PhoneCall className="w-4 h-4" />
-              <span>Call Paramedic</span>
-            </a>
-            <button 
-              onClick={onClose} 
-              className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl text-xs font-semibold transition"
-            >
-              Minimize Telemetry
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ============================================================================
-// 4. PORTAL 1: PATIENT DASHBOARD & VIEWS
-// ============================================================================
-
-const PatientPortal = () => {
-  const { activeEmergency, history, cancelEmergency } = useEmergency();
-  const [isSOSOpen, setIsSOSOpen] = useState(false);
-  const [showMap, setShowMap] = useState(false);
-  const [activeTab, setActiveTab] = useState('Overview');
-
-  // Trigger Map automatically when ambulance is assigned
-  useEffect(() => {
-    if (activeEmergency?.status === 'AMBULANCE ASSIGNED' || activeEmergency?.status === 'EN ROUTE') {
-      setShowMap(true);
-    }
-  }, [activeEmergency?.status]);
-
-  return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* Top Priority SOS Banner / Active Incident Bar */}
-      {activeEmergency ? (
-        <div className="relative overflow-hidden bg-gradient-to-r from-rose-950/80 via-slate-900 to-slate-900 border-2 border-rose-500/60 rounded-3xl p-6 md:p-8 shadow-2xl shadow-rose-950/40">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping"></span>
-                <span className="text-xs font-black tracking-widest uppercase text-rose-400">CRITICAL INCIDENT ACTIVE</span>
-                <span className="text-xs text-slate-500 font-mono">#{activeEmergency.id}</span>
-              </div>
-              <h2 className="text-2xl md:text-3xl font-black text-white">Emergency Alert Sent — Help is on the way.</h2>
-              <p className="text-sm text-slate-300 max-w-xl">
-                Location shared with Madurai EMS Central Dispatch. Status: <strong className="text-yellow-400 font-bold">{activeEmergency.status}</strong>
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              {activeEmergency.ambulance && (
-                <button
-                  onClick={() => setShowMap(true)}
-                  className="px-5 py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center space-x-2 shadow-lg shadow-cyan-950 transition"
-                >
-                  <MapPin className="w-4 h-4" />
-                  <span>Open Live Map & ETA</span>
-                </button>
-              )}
-              <button
-                onClick={cancelEmergency}
-                className="px-5 py-3 rounded-2xl bg-slate-800 hover:bg-rose-900/50 text-slate-300 hover:text-rose-300 font-semibold text-xs border border-slate-700 transition"
-              >
-                Cancel SOS
-              </button>
-            </div>
-          </div>
-
-          {/* Quick Telemetry Strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-slate-800/80 text-xs">
-            <div>
-              <span className="text-slate-500 block">Assigned Unit</span>
-              <span className="font-bold text-white">{activeEmergency.ambulance || 'Searching...'}</span>
-            </div>
-            <div>
-              <span className="text-slate-500 block">Est. Arrival</span>
-              <span className="font-bold text-emerald-400">{activeEmergency.eta || 'Calculating...'}</span>
-            </div>
-            <div>
-              <span className="text-slate-500 block">Driver</span>
-              <span className="font-bold text-white">{activeEmergency.driver || 'Pending'}</span>
-            </div>
-            <div>
-              <span className="text-slate-500 block">Hospital Grid</span>
-              <span className="font-bold text-cyan-400">Apollo Speciality (2.1 km)</span>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* Standalone Giant SOS Card */
-        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
-          <div className="space-y-2 text-center md:text-left">
-            <span className="text-xs font-extrabold uppercase tracking-widest text-emerald-400 flex items-center justify-center md:justify-start space-x-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-              <span>All EMS Systems Nominal</span>
-            </span>
-            <h2 className="text-2xl md:text-3xl font-black text-white">Need Urgent Medical Attention?</h2>
-            <p className="text-sm text-slate-400 max-w-lg">
-              One-touch SOS transmits your live GPS coordinates, medical history, and blood profile to the nearest active ambulance.
-            </p>
-          </div>
-
-          <button
-            onClick={() => setIsSOSOpen(true)}
-            className="group relative flex items-center justify-center px-8 py-5 rounded-2xl bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 text-white font-black text-base tracking-wide shadow-2xl shadow-rose-950/80 hover:scale-105 active:scale-95 transition-all duration-300 border border-rose-400/30"
-          >
-            <span className="absolute inset-0 rounded-2xl bg-rose-500 animate-ping opacity-20 group-hover:opacity-40"></span>
-            <AlertTriangle className="w-6 h-6 mr-3 animate-bounce" />
-            <span>TRIGGER 🚨 SOS</span>
-          </button>
-        </div>
-      )}
-
-      {/* Main Patient Content Area */}
-      {activeTab === 'Overview' && (
-        <div className="space-y-6">
-          {/* Quick Metrics Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-3xl flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-400 font-semibold">Blood Group</p>
-                <h3 className="text-2xl font-black text-white mt-1">O+ Positive</h3>
-                <span className="text-[11px] text-emerald-400 font-medium">Universal Compatibility</span>
-              </div>
-              <div className="p-3 bg-rose-500/10 text-rose-400 rounded-2xl">
-                <Droplet className="w-6 h-6" />
-              </div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-3xl flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-400 font-semibold">Primary Contact</p>
-                <h3 className="text-lg font-bold text-white mt-1">Sarah Mercer</h3>
-                <span className="text-[11px] text-slate-400">+91 94432 10987</span>
-              </div>
-              <div className="p-3 bg-cyan-500/10 text-cyan-400 rounded-2xl">
-                <Users className="w-6 h-6" />
-              </div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-3xl flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-400 font-semibold">Active Rx / Allergies</p>
-                <h3 className="text-lg font-bold text-white mt-1">Penicillin</h3>
-                <span className="text-[11px] text-yellow-400 font-medium">Severe Allergy Logged</span>
-              </div>
-              <div className="p-3 bg-yellow-500/10 text-yellow-400 rounded-2xl">
-                <HeartPulse className="w-6 h-6" />
-              </div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-3xl flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-400 font-semibold">Nearest Trauma Care</p>
-                <h3 className="text-lg font-bold text-white mt-1">Apollo Madurai</h3>
-                <span className="text-[11px] text-slate-400">2.1 km • 6 min drive</span>
-              </div>
-              <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-2xl">
-                <Activity className="w-6 h-6" />
-              </div>
-            </div>
-          </div>
-
-          {/* Past Incidents & Quick Actions */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-6">
-              <h3 className="text-base font-bold text-white mb-4 flex items-center space-x-2">
-                <Clock className="w-5 h-5 text-cyan-400" />
-                <span>Emergency Dispatch History</span>
-              </h3>
-
-              <div className="space-y-3">
-                {history.length === 0 ? (
-                  <p className="text-xs text-slate-500 py-4">No past emergency records found.</p>
-                ) : (
-                  history.map((item, idx) => (
-                    <div key={idx} className="bg-slate-800/50 border border-slate-700/60 p-4 rounded-2xl flex items-center justify-between text-xs">
-                      <div className="space-y-1">
-                        <div className="flex items-center space-x-2">
-                          <span className="font-bold text-white">{item.type}</span>
-                          <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full text-[10px] font-bold">
-                            {item.status}
-                          </span>
-                        </div>
-                        <p className="text-slate-400">{item.location?.address || 'Madurai Grid'}</p>
-                      </div>
-                      <div className="text-right text-slate-500 font-mono">
-                        <div>{item.timestamp || 'Recent'}</div>
-                        <div className="text-[10px] text-cyan-400 font-semibold">{item.vehicle || 'Unit Assigned'}</div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4">
-              <h3 className="text-base font-bold text-white">Emergency Fast Dial</h3>
-              <div className="space-y-2.5">
-                <a href="tel:108" className="w-full p-3.5 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded-2xl flex items-center justify-between text-rose-300 transition">
-                  <span className="font-bold text-xs">108 National Ambulance</span>
-                  <PhoneCall className="w-4 h-4" />
-                </a>
-                <a href="tel:112" className="w-full p-3.5 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/40 rounded-2xl flex items-center justify-between text-cyan-300 transition">
-                  <span className="font-bold text-xs">112 Unified Emergency</span>
-                  <PhoneCall className="w-4 h-4" />
-                </a>
-                <a href="tel:102" className="w-full p-3.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl flex items-center justify-between text-slate-300 transition">
-                  <span className="font-bold text-xs">102 Maternity & Child</span>
-                  <PhoneCall className="w-4 h-4" />
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modals */}
-      <SOSModal isOpen={isSOSOpen} onClose={() => setIsSOSOpen(false)} />
-      {showMap && activeEmergency && (
-        <LiveMapModal emergency={activeEmergency} onClose={() => setShowMap(false)} />
-      )}
-    </div>
-  );
-};
-
-// ============================================================================
-// 5. PORTAL 2: CONTROL ROOM DISPATCHER
-// ============================================================================
-
-const ControlRoomPortal = () => {
-  const { activeEmergency, updateEmergencyStatus, addNotification } = useEmergency();
-
-  const handleManualDispatch = () => {
-    if (!activeEmergency) return;
-    updateEmergencyStatus('AMBULANCE ASSIGNED');
-    addNotification('Control Dispatch', 'Manual unit TN 58 AB 1234 assigned.');
-  };
-
-  return (
-    <div className="space-y-6 animate-fadeIn">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-        <div>
-          <span className="text-xs font-bold text-cyan-400 uppercase tracking-widest">EMS Control Center</span>
-          <h2 className="text-2xl font-black text-white">Central Dispatch & Fleet Telemetry</h2>
-        </div>
-        <div className="flex items-center space-x-3 text-xs">
-          <span className="px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl font-bold">
-            18 Ambulances Online
-          </span>
-          <span className="px-3 py-1.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-xl font-bold">
-            3 High Priority Incidents
-          </span>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-6">
-          <h3 className="text-base font-bold text-white mb-4">Active SOS Broadcast Feed</h3>
-          {activeEmergency ? (
-            <div className="bg-slate-800/80 border border-rose-500/50 rounded-2xl p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="px-2.5 py-1 bg-rose-600 text-white rounded-lg text-xs font-black uppercase tracking-wider">
-                  {activeEmergency.priority}
-                </span>
-                <span className="text-xs text-slate-400 font-mono">{activeEmergency.id}</span>
-              </div>
-
-              <div>
-                <h4 className="text-lg font-bold text-white">{activeEmergency.type}</h4>
-                <p className="text-xs text-slate-300 mt-1">{activeEmergency.message}</p>
-                <p className="text-xs text-slate-400 mt-2 flex items-center space-x-1">
-                  <MapPin className="w-3.5 h-3.5 text-rose-400" />
-                  <span>{activeEmergency.location?.address}</span>
-                </p>
-              </div>
-
-              <div className="pt-3 border-t border-slate-700 flex flex-wrap items-center justify-between gap-3 text-xs">
-                <div>
-                  <span className="text-slate-400">Current Status: </span>
-                  <strong className="text-yellow-400 font-bold">{activeEmergency.status}</strong>
-                </div>
-
-                {activeEmergency.status === 'SEARCHING AMBULANCE' && (
-                  <button
-                    onClick={handleManualDispatch}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-950 transition"
-                  >
-                    Force Assign ALS Unit
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-12 text-slate-500 text-xs">
-              No active distress alerts currently queued in the triage buffer.
-            </div>
-          )}
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
-          <h3 className="text-base font-bold text-white mb-4">Fleet Readiness</h3>
-          <div className="space-y-3">
-            {[
-              { id: 'TN 58 AB 1234', driver: 'John Driver', status: 'AVAILABLE', type: 'ALS Tier-1' },
-              { id: 'TN 58 BC 5678', driver: 'Arun Kumar', status: 'BUSY', type: 'BLS Unit' },
-              { id: 'TN 58 CD 9012', driver: 'Senthil Nathan', status: 'AVAILABLE', type: 'Cardiac Mobile' }
-            ].map((amb, i) => (
-              <div key={i} className="p-3.5 bg-slate-800/50 border border-slate-700/60 rounded-2xl flex items-center justify-between text-xs">
-                <div>
-                  <div className="font-bold text-white font-mono">{amb.id}</div>
-                  <div className="text-slate-400">{amb.driver} • {amb.type}</div>
-                </div>
-                <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
-                  amb.status === 'AVAILABLE' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-yellow-500/20 text-yellow-400'
-                }`}>
-                  {amb.status}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ============================================================================
-// 6. PORTAL 3: AMBULANCE DRIVER PORTAL
-// ============================================================================
-
-const DriverPortal = () => {
-  const { activeEmergency, updateEmergencyStatus } = useEmergency();
-
-  return (
-    <div className="space-y-6 animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <span className="text-xs font-bold text-emerald-400 uppercase tracking-widest">Driver Navigation Console</span>
-          <h2 className="text-2xl font-black text-white">Unit TN 58 AB 1234 — John Driver</h2>
-        </div>
-        <div className="flex items-center space-x-2">
-          <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span className="text-xs font-bold text-slate-300">Terminal Connected</span>
-        </div>
-      </div>
-
-      {activeEmergency ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 space-y-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
-            <div>
-              <span className="px-3 py-1 bg-rose-500/20 text-rose-400 border border-rose-500/40 rounded-full text-xs font-bold uppercase">
-                Active Assignment
-              </span>
-              <h3 className="text-2xl font-black text-white mt-2">{activeEmergency.type}</h3>
-              <p className="text-sm text-slate-400">{activeEmergency.location?.address}</p>
-            </div>
-            <div className="text-right">
-              <span className="text-xs text-slate-500">Patient Details</span>
-              <div className="text-sm font-bold text-white">{activeEmergency.patientName} (Age: {activeEmergency.patientAge})</div>
-              <div className="text-xs font-bold text-rose-400">Blood: {activeEmergency.patientBlood}</div>
-            </div>
-          </div>
-
-          {/* Stepper Controls */}
-          <div>
-            <h4 className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-3">Trip Progress Update</h4>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: 'En Route', next: 'EN ROUTE' },
-                { label: 'Arrived', next: 'ARRIVED' },
-                { label: 'Patient Picked Up', next: 'PATIENT PICKED UP' },
-                { label: 'Completed', next: 'COMPLETED' }
-              ].map((step) => (
-                <button
-                  key={step.next}
-                  onClick={() => updateEmergencyStatus(step.next)}
-                  className={`py-3.5 px-4 rounded-xl font-bold text-xs transition border ${
-                    activeEmergency.status === step.next
-                      ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-950'
-                      : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  {step.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center text-slate-500 text-xs">
-          No dispatch calls assigned to this unit currently. You are flagged as AVAILABLE on grid.
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ============================================================================
-// 7. SHELL LAYOUT: SIDEBAR, HEADER & ROLE SWITCHER
-// ============================================================================
-
-export default function ResQLinkApp() {
-  const [role, setRole] = useState('patient'); // 'patient' | 'control' | 'driver'
-  const [activeItem, setActiveItem] = useState('Overview');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  const patientNav = [
-    { label: 'Overview', icon: HeartPulse },
-    { label: 'Active Emergency', icon: AlertTriangle },
-    { label: 'Blood & Rx Requests', icon: Droplet },
-    { label: 'Emergency Contacts', icon: Users },
-    { label: 'Medical Information', icon: FileText },
-    { label: 'Profile', icon: User },
-    { label: 'Notifications', icon: Bell },
-    { label: 'Settings', icon: Settings }
-  ];
-
-  return (
-    <EmergencyProvider>
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-rose-500 selection:text-white">
-        {/* Top Navbar */}
-        <header className="h-16 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-40 px-4 md:px-8 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <button 
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 text-slate-400 hover:text-white"
-            >
-              <Menu className="w-6 h-6" />
-            </button>
-            <div className="flex items-center space-x-2.5">
-              <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-rose-600 to-red-500 flex items-center justify-center shadow-lg shadow-rose-950 font-black text-white">
-                R
-              </div>
-              <span className="text-lg font-black tracking-tight text-white">ResQLink</span>
-            </div>
-          </div>
-
-          {/* Quick Role Switcher for Interactive Evaluation */}
-          <div className="flex items-center space-x-2 bg-slate-800/80 p-1 rounded-2xl border border-slate-700">
-            {[
-              { key: 'patient', label: 'Patient' },
-              { key: 'control', label: 'Control Room' },
-              { key: 'driver', label: 'Driver' }
-            ].map((r) => (
-              <button
-                key={r.key}
-                onClick={() => setRole(r.key)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                  role === r.key 
-                    ? 'bg-rose-600 text-white shadow-md' 
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-        </header>
-
-        <div className="flex-1 flex overflow-hidden">
-          {/* Responsive Sidebar */}
-          <aside className={`fixed md:static inset-y-0 left-0 z-30 w-64 bg-slate-900 border-r border-slate-800 p-5 flex flex-col justify-between transform transition-transform duration-300 ease-in-out ${
-            mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-          }`}>
-            <div className="space-y-6">
-              <div className="flex items-center justify-between md:hidden">
-                <span className="text-xs font-bold text-slate-400">NAVIGATION</span>
-                <button onClick={() => setMobileMenuOpen(false)}><X className="w-5 h-5 text-slate-400" /></button>
-              </div>
-
-              <div className="space-y-1">
-                {patientNav.map((nav) => {
-                  const Icon = nav.icon;
-                  const isActive = activeItem === nav.label;
-                  return (
-                    <button
-                      key={nav.label}
-                      onClick={() => {
-                        setActiveItem(nav.label);
-                        setMobileMenuOpen(false);
-                      }}
-                      className={`w-full flex items-center space-x-3 px-3.5 py-3 rounded-2xl text-xs font-bold transition ${
-                        isActive
-                          ? 'bg-rose-600 text-white shadow-lg shadow-rose-950/50'
-                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4" />
-                      <span>{nav.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* System Status Indicators */}
-            <div className="space-y-3 pt-6 border-t border-slate-800 text-xs">
-              <div className="flex items-center justify-between text-slate-400">
-                <span className="flex items-center space-x-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                  <span>System Online</span>
-                </span>
-                <span className="font-mono text-[10px] text-emerald-400">99.98%</span>
-              </div>
-              <div className="p-3 bg-slate-800/60 rounded-2xl border border-slate-700/50 text-[11px] text-slate-400">
-                Direct Emergency: <strong className="text-white">108 / 911</strong>
-              </div>
-            </div>
-          </aside>
-
-          {/* Central Main Viewport */}
-          <main className="flex-1 overflow-y-auto p-4 md:p-8">
-            <div className="max-w-6xl mx-auto">
-              {role === 'patient' && <PatientPortal />}
-              {role === 'control' && <ControlRoomPortal />}
-              {role === 'driver' && <DriverPortal />}
-            </div>
-          </main>
-        </div>
-      </div>
-    </EmergencyProvider>
-  );
-}
+# 🚑 ResQLink — Emergency Response & Healthcare Dispatch System
+
+A unified, real-time emergency healthcare dispatch frontend built with **React, Vite, and Tailwind CSS**. ResQLink connects three dedicated roles — **Patient, EMS Control Room, and Ambulance Driver** — into a synchronized emergency response workflow.
+
+## ⚡ Key Features
+
+* 🚨 **Instant SOS Activation** — One-touch emergency dispatch with categories:
+
+  * Cardiac
+  * Trauma
+  * Respiratory
+  * Stroke
+* 📍 **Browser Geolocation** — Captures the patient's coordinates using the browser Geolocation API with graceful fallback handling.
+* 🚑 **Automated Ambulance Dispatch Simulator** — Automatically assigns:
+
+  * **Ambulance:** `TN 58 AB 1234`
+  * **Driver:** `John Driver`
+  * **ETA:** 5 minutes
+* 🗺️ **Interactive Live Map** — Displays simulated route, countdown timer, distance indicator, driver information, and paramedic calling.
+* 🔄 **Synchronized State Engine** — Uses `EmergencyContext` and `localStorage` to synchronize emergency state across all portals.
+* 📱 **Responsive Dark UI** — Accessibility-focused interface optimized for mobile, tablet, and desktop.
+* 📋 **Emergency History** — Completed emergencies are archived for later review.
+
+---
+
+## 🔄 Emergency Lifecycle
+
+```text
+Patient Portal
+      │
+      │ Trigger SOS + GPS
+      ▼
+Active Emergency Created
+Status: SEARCHING AMBULANCE
+      │
+      ▼
+EMS Control Room
+Auto Assign / Manual Dispatch
+      │
+      ▼
+Ambulance Driver
+Accept Assignment
+      │
+      ▼
+AMBULANCE ASSIGNED
+ETA: 5 Minutes
+      │
+      ▼
+Patient Portal
+Live Map + Driver Information
+      │
+      ▼
+Driver Telemetry
+EN ROUTE
+      │
+      ▼
+ARRIVED
+      │
+      ▼
+PATIENT PICKED UP
+      │
+      ▼
+COMPLETED
+      │
+      ▼
+Emergency Resolved
+      │
+      ▼
+Archived in Emergency History
+```
+
+---
+
+# 🧭 Portal Architecture
+
+## 1. 👤 Patient Portal
+
+The Patient Portal provides a simple emergency interface for requesting immediate assistance.
+
+### Features
+
+* Giant **SOS** action button
+* Emergency type selection
+* Priority/triage indicators
+* Browser GPS location capture
+* Active emergency tracking
+* Live ambulance ETA
+* Driver information
+* Emergency contacts
+* Medical information
+* Blood & prescription requests
+* Notification center
+* Emergency history
+* Profile and settings
+* Quick hospital dialers
+
+### Sidebar Navigation
+
+```text
+Overview
+Active Emergency
+Blood & Rx Requests
+Emergency Contacts
+Medical Information
+Profile
+Notifications
+Settings
+```
+
+### System Status
+
+```text
+System Online: 99.98%
+Emergency Hotline: 108 / 911
+```
+
+---
+
+## 2. 🖥️ EMS Control Room
+
+The EMS Control Room acts as the central dispatch station.
+
+### Features
+
+* Live emergency feed
+* Incoming distress alerts
+* Emergency severity indicators
+* Patient location details
+* Ambulance assignment
+* Manual dispatch controls
+* ALS/BLS vehicle selection
+* Fleet readiness monitoring
+* Active emergency tracking
+
+### Fleet Status
+
+```text
+IDLE
+ASSIGNED
+BUSY
+```
+
+---
+
+## 3. 🚑 Ambulance Driver Console
+
+The Driver Console provides the assigned ambulance driver with all information required to manage the emergency trip.
+
+### Patient Information
+
+* Blood type
+* Age
+* Emergency category
+* Location
+* Critical medical notes
+* Emergency details
+
+### Trip Progression
+
+The driver can update the emergency through:
+
+```text
+EN ROUTE
+     ↓
+ARRIVED
+     ↓
+PATIENT PICKED UP
+     ↓
+COMPLETED
+```
+
+Each update is synchronized with the Patient and Control Room portals.
+
+---
+
+# 🛠️ Technology Stack
+
+| Technology              | Purpose                        |
+| ----------------------- | ------------------------------ |
+| React                   | Frontend UI                    |
+| Vite                    | Development and build tooling  |
+| Tailwind CSS            | Styling and responsive design  |
+| JavaScript              | Application logic              |
+| React Context API       | Global emergency state         |
+| localStorage            | Cross-portal state persistence |
+| Browser Geolocation API | Patient location capture       |
+| Lucide React            | Icons                          |
+| HTML5                   | Application structure          |
+
+---
+
+# 📦 Project Architecture
+
+A typical project structure can be organized as:
+
+```text
+resqlink-frontend/
+│
+├── public/
+│
+├── src/
+│   ├── components/
+│   │   ├── Patient/
+│   │   ├── ControlRoom/
+│   │   ├── Driver/
+│   │   ├── Map/
+│   │   └── common/
+│   │
+│   ├── context/
+│   │   └── EmergencyContext.jsx
+│   │
+│   ├── pages/
+│   │   ├── PatientPortal.jsx
+│   │   ├── ControlRoom.jsx
+│   │   └── DriverConsole.jsx
+│   │
+│   ├── App.jsx
+│   ├── main.jsx
+│   └── index.css
+│
+├── package.json
+├── tailwind.config.js
+├── vite.config.js
+└── README.md
+```
+
+---
+
+# 🚀 Quick Start
+
+## 1. Prerequisites
+
+Make sure the following are installed:
+
+* **Node.js 18+**
+* **npm**
+* Git
+
+Check your Node.js version:
+
+```bash
+node --version
+```
+
+Check npm:
+
+```bash
+npm --version
+```
+
+---
+
+## 2. Clone the Repository
+
+```bash
+git clone https://github.com/your-org/resqlink-frontend.git
+```
+
+Navigate into the project:
+
+```bash
+cd resqlink-frontend
+```
+
+---
+
+## 3. Install Dependencies
+
+```bash
+npm install
+```
+
+If required, install the main dependencies:
+
+```bash
+npm install lucide-react clsx tailwind-merge
+```
+
+---
+
+## 4. Start the Development Server
+
+```bash
+npm run dev
+```
+
+The application will normally be available at:
+
+```text
+http://localhost:5173
+```
+
+Open the displayed URL in your browser.
+
+---
+
+# 🧪 Verification / Demo Walkthrough
+
+The application can be demonstrated using the following workflow.
+
+### Step 1 — Open Patient Portal
+
+The Patient Portal is the default view.
+
+Click:
+
+```text
+TRIGGER 🚨 SOS
+```
+
+---
+
+### Step 2 — Select Emergency Type
+
+Select one of the available emergency categories:
+
+```text
+Cardiac
+Trauma
+Respiratory
+Stroke
+```
+
+Then click:
+
+```text
+CONFIRM SOS
+```
+
+---
+
+### Step 3 — Emergency Created
+
+The system creates an active emergency and displays:
+
+```text
+Emergency Alert Sent
+Help is on the way
+```
+
+The browser attempts to obtain the patient's current coordinates using the Geolocation API.
+
+---
+
+### Step 4 — Ambulance Assignment
+
+For demonstration purposes, the system automatically assigns an ambulance after approximately **3.5 seconds**.
+
+Demo ambulance:
+
+```text
+Vehicle: TN 58 AB 1234
+Driver: John Driver
+ETA: 5 minutes
+Distance: 2.4 km
+```
+
+The Live Map Modal opens automatically.
+
+---
+
+### Step 5 — Live Map
+
+The Patient Portal displays:
+
+* Simulated ambulance route
+* Distance
+* 5-minute countdown
+* Driver information
+* Emergency status
+* Paramedic call button
+
+---
+
+### Step 6 — Control Room
+
+Use the role switcher in the navigation bar and select:
+
+```text
+Control Room
+```
+
+The Control Room should display the incoming emergency and its current status.
+
+---
+
+### Step 7 — Driver Portal
+
+Switch to:
+
+```text
+Driver
+```
+
+The assigned emergency should be visible.
+
+Progress through the emergency using:
+
+```text
+EN ROUTE
+     ↓
+ARRIVED
+     ↓
+PATIENT PICKED UP
+     ↓
+COMPLETED
+```
+
+---
+
+### Step 8 — Verify Resolution
+
+Switch back to:
+
+```text
+Patient
+```
+
+The active emergency should be cleared after completion.
+
+The completed emergency should appear in:
+
+```text
+Emergency Dispatch History
+```
+
+---
+
+# 🔄 State Synchronization
+
+ResQLink uses a shared emergency state architecture.
+
+```text
+                 ┌──────────────────┐
+                 │ EmergencyContext │
+                 └────────┬─────────┘
+                          │
+          ┌───────────────┼───────────────┐
+          │               │               │
+          ▼               ▼               ▼
+     Patient Portal  Control Room   Driver Console
+          │               │               │
+          └───────────────┼───────────────┘
+                          │
+                          ▼
+                    localStorage
+```
+
+The shared state contains information such as:
+
+```text
+Emergency ID
+Patient information
+Emergency type
+Priority
+GPS coordinates
+Ambulance
+Driver
+ETA
+Distance
+Current status
+Timestamp
+```
+
+This allows the three portals to reflect the same emergency lifecycle during the demonstration.
+
+---
+
+# 📍 Geolocation
+
+ResQLink uses the browser's built-in Geolocation API:
+
+```javascript
+navigator.geolocation.getCurrentPosition()
+```
+
+The application handles cases where:
+
+* Location permission is granted
+* Location permission is denied
+* Location is unavailable
+* Browser geolocation fails
+
+A fallback mechanism prevents the application from crashing when location access is unavailable.
+
+> **Note:** Browser geolocation requires user permission and may require a secure context such as HTTPS in deployed environments.
+
+---
+
+# ⏱️ Dispatch Simulation
+
+The project is designed primarily for **frontend demonstration and prototype validation**.
+
+Instead of waiting five real minutes for ambulance allocation, the system simulates dispatch using a short delay:
+
+```text
+SOS Trigger
+    ↓
+3.5 second simulation
+    ↓
+Ambulance Assigned
+    ↓
+5-minute ETA simulation
+```
+
+This makes the complete emergency workflow easy to demonstrate during presentations, evaluations, and hackathons.
+
+---
+
+# 🎨 UI & Accessibility
+
+ResQLink uses a high-contrast dark healthcare interface designed around emergency usability.
+
+### Design Goals
+
+* Clear emergency actions
+* Large SOS controls
+* High-contrast text
+* Responsive layouts
+* Clear status indicators
+* Minimal navigation complexity
+* Mobile-friendly interface
+* Consistent emergency states
+
+---
+
+# 🔐 Safety & Prototype Disclaimer
+
+ResQLink is a **frontend prototype / emergency response simulation** and should not be treated as a production emergency dispatch service.
+
+The ambulance allocation, ETA, route, driver information, and emergency progression are simulated for demonstration purposes.
+
+A production deployment would require integration with:
+
+* Verified EMS infrastructure
+* Emergency call centers
+* Ambulance GPS telemetry
+* Hospital systems
+* Secure patient authentication
+* Real-time backend infrastructure
+* Medical data protection
+* Production-grade mapping services
+* Government/emergency service APIs
+
+---
+
+# 🚧 Future Enhancements
+
+Potential production-level improvements include:
+
+* 🤖 AI-based emergency severity prediction
+* 🧠 Intelligent ambulance allocation
+* 🗺️ Real-time GPS tracking
+* 🚦 Traffic-aware ETA prediction
+* 🏥 Nearest suitable hospital recommendation
+* ❤️ IoT-based patient vital monitoring
+* 📞 Real emergency service integration
+* 🔔 Push notifications
+* 🛰️ Real-time ambulance telemetry
+* 🔐 Role-based authentication
+* ☁️ Cloud backend
+* 📊 EMS analytics dashboard
+* 🧾 Digital emergency reports
+* 🌐 Multi-language support
+* 📱 Dedicated mobile applications
+
+---
+
+# 📊 Expected Impact
+
+ResQLink aims to demonstrate how a unified digital platform can reduce communication gaps between:
+
+```text
+Patient
+   ↕
+EMS Control Room
+   ↕
+Ambulance Driver
+   ↕
+Hospital
+```
+
+The prototype focuses on **faster emergency communication, centralized dispatch visibility, synchronized status updates, and transparent ambulance tracking**.
+
+---
+
+# 👨‍💻 Development
+
+Built using:
+
+```text
+React + Vite + Tailwind CSS
+```
+
+Designed as a real-time emergency healthcare dispatch prototype for demonstration, learning, and future production expansion.
+
+---
+
+# 📄 License
+
+This project is intended for educational, prototype, and demonstration purposes.
