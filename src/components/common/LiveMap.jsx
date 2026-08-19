@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Navigation,
   Crosshair,
@@ -24,6 +24,13 @@ const MAP_BOUNDS = {
   maxLng: -122.395,
 };
 
+const MADURAI_BOUNDS = {
+  minLat: 9.8900,
+  maxLat: 9.9600,
+  minLng: 78.0800,
+  maxLng: 78.1600,
+};
+
 export function LiveMap({
   emergencies = [],
   ambulances = [],
@@ -40,19 +47,28 @@ export function LiveMap({
   const [selectedPin, setSelectedPin] = useState(null);
   const mapContainerRef = useRef(null);
 
+  const activeIncident = emergencies.find((e) => e.id === focusedEmergencyId) || emergencies[0];
+
+  // Dynamically switch projection bounds based on coordinate range
+  const currentBounds = useMemo(() => {
+    if (activeIncident && activeIncident.lat < 20) {
+      return MADURAI_BOUNDS;
+    }
+    return MAP_BOUNDS;
+  }, [activeIncident]);
+
   // Convert GPS (lat, lng) to percentage (x%, y%) in normalized container
   const gpsToPercent = (lat, lng) => {
-    const latClamped = Math.max(MAP_BOUNDS.minLat, Math.min(MAP_BOUNDS.maxLat, lat));
-    const lngClamped = Math.max(MAP_BOUNDS.minLng, Math.min(MAP_BOUNDS.maxLng, lng));
+    const latClamped = Math.max(currentBounds.minLat, Math.min(currentBounds.maxLat, lat));
+    const lngClamped = Math.max(currentBounds.minLng, Math.min(currentBounds.maxLng, lng));
 
     // Y is inverted (higher latitude is higher on map)
-    const y = ((MAP_BOUNDS.maxLat - latClamped) / (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat)) * 100;
-    const x = ((lngClamped - MAP_BOUNDS.minLng) / (MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng)) * 100;
+    const y = ((currentBounds.maxLat - latClamped) / (currentBounds.maxLat - currentBounds.minLat)) * 100;
+    const x = ((lngClamped - currentBounds.minLng) / (currentBounds.maxLng - currentBounds.minLng)) * 100;
 
     return { x: Math.max(5, Math.min(95, x)), y: Math.max(5, Math.min(95, y)) };
   };
 
-  const activeIncident = emergencies.find((e) => e.id === focusedEmergencyId) || emergencies[0];
   const assignedAmbulance = activeIncident
     ? ambulances.find((a) => a.id === activeIncident.ambulanceId)
     : null;

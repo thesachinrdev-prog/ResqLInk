@@ -2,13 +2,13 @@ import React from "react";
 import { AlertTriangle, Siren } from "lucide-react";
 import { useEmergency } from "../../context/EmergencyContext";
 
-export default function EmergencySOSButton() {
+export function EmergencySOSButton({ onClick }) {
   const { openSOSModal, hasActiveSOS } = useEmergency();
 
   return (
     <button
       type="button"
-      onClick={openSOSModal}
+      onClick={onClick || openSOSModal}
       className={`
         group relative flex items-center gap-3
         rounded-2xl px-6 py-4

@@ -131,6 +131,14 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/patient/:subpage"
+        element={
+          <ProtectedRoute allowedRole={ROLES.PATIENT}>
+            <PatientDashboard />
+          </ProtectedRoute>
+        }
+      />
 
       {/* =====================================================
           DRIVER DASHBOARD
@@ -138,6 +146,14 @@ function AppRoutes() {
 
       <Route
         path="/driver/dashboard"
+        element={
+          <ProtectedRoute allowedRole={ROLES.DRIVER}>
+            <DriverDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/driver/:subpage"
         element={
           <ProtectedRoute allowedRole={ROLES.DRIVER}>
             <DriverDashboard />
@@ -157,10 +173,32 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-
-      {/* Alternative Control Room URL */}
       <Route
-        path="/controlroom/dashboard"
+        path="/control/:subpage"
+        element={
+          <ProtectedRoute allowedRole={ROLES.CONTROL_ROOM}>
+            <ControlRoomCenter />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/control-room/dashboard"
+        element={
+          <ProtectedRoute allowedRole={ROLES.CONTROL_ROOM}>
+            <ControlRoomCenter />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/control-room/:subpage"
+        element={
+          <ProtectedRoute allowedRole={ROLES.CONTROL_ROOM}>
+            <ControlRoomCenter />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/controlroom/:subpage"
         element={
           <ProtectedRoute allowedRole={ROLES.CONTROL_ROOM}>
             <ControlRoomCenter />

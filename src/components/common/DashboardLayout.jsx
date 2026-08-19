@@ -336,23 +336,37 @@ export function DashboardLayout({ children }) {
   // ACTIVE TAB
   // ------------------------------------------------------------
 
-  const [activeTab, setActiveTab] =
-    useState(
-      location.pathname === '/notifications'
-        ? 'notifications'
-        : 'dashboard'
-    );
-
-  useEffect(() => {
-    if (location.pathname === '/notifications') {
-      setActiveTab('notifications');
-    } else if (
-      location.pathname === '/dashboard' ||
-      location.pathname === '/'
-    ) {
-      setActiveTab('dashboard');
+  const getActiveTabFromPath = () => {
+    const path = location.pathname;
+    if (path.includes('/notifications')) return 'notifications';
+    
+    if (role === ROLES.PATIENT) {
+      if (path.includes('/patient/dashboard')) return 'dashboard';
+      if (path.includes('/patient/emergency')) return 'emergency';
+      if (path.includes('/patient/requests')) return 'requests';
+      if (path.includes('/patient/emergency-contacts')) return 'contacts';
+      if (path.includes('/patient/medical-records')) return 'medical';
+      if (path.includes('/patient/profile')) return 'profile';
+      if (path.includes('/patient/settings')) return 'settings';
+    } else if (role === ROLES.DRIVER) {
+      if (path.includes('/driver/dashboard')) return 'dashboard';
+      if (path.includes('/driver/emergencies')) return 'requests';
+      if (path.includes('/driver/navigation')) return 'navigation';
+      if (path.includes('/driver/history')) return 'history';
+      if (path.includes('/driver/availability')) return 'availability';
+      if (path.includes('/driver/profile')) return 'profile';
+    } else if (role === ROLES.CONTROL_ROOM) {
+      if (path.includes('/control-room/dashboard')) return 'dashboard';
+      if (path.includes('/control-room/emergencies')) return 'emergencies';
+      if (path.includes('/control-room/ambulances')) return 'ambulances';
+      if (path.includes('/control-room/dispatch')) return 'hospitals';
+      if (path.includes('/control-room/notifications')) return 'alerts';
+      if (path.includes('/control-room/analytics')) return 'analytics';
     }
-  }, [location.pathname]);
+    return 'dashboard';
+  };
+
+  const activeTab = getActiveTabFromPath();
 
   // ------------------------------------------------------------
   // SCROLL
@@ -408,7 +422,6 @@ export function DashboardLayout({ children }) {
   // ------------------------------------------------------------
 
   const handleNavigation = (id) => {
-    setActiveTab(id);
     setMobileDrawerOpen(false);
 
     if (id === 'notifications') {
@@ -416,13 +429,32 @@ export function DashboardLayout({ children }) {
       return;
     }
 
-    if (id === 'dashboard') {
-      navigate('/dashboard');
+    if (role === ROLES.PATIENT) {
+      if (id === 'dashboard') navigate('/patient/dashboard');
+      else if (id === 'emergency') navigate('/patient/emergency');
+      else if (id === 'requests') navigate('/patient/requests');
+      else if (id === 'contacts') navigate('/patient/emergency-contacts');
+      else if (id === 'medical') navigate('/patient/medical-records');
+      else if (id === 'profile') navigate('/patient/profile');
+      else if (id === 'settings') navigate('/patient/settings');
+    } else if (role === ROLES.DRIVER) {
+      if (id === 'dashboard') navigate('/driver/dashboard');
+      else if (id === 'requests') navigate('/driver/emergencies');
+      else if (id === 'navigation') navigate('/driver/navigation');
+      else if (id === 'history') navigate('/driver/history');
+      else if (id === 'availability') navigate('/driver/availability');
+      else if (id === 'profile') navigate('/driver/profile');
+    } else if (role === ROLES.CONTROL_ROOM) {
+      if (id === 'dashboard') navigate('/control-room/dashboard');
+      else if (id === 'emergencies') navigate('/control-room/emergencies');
+      else if (id === 'ambulances') navigate('/control-room/ambulances');
+      else if (id === 'hospitals') navigate('/control-room/dispatch');
+      else if (id === 'alerts') navigate('/control-room/notifications');
+      else if (id === 'analytics') navigate('/control-room/analytics');
     }
   };
 
   const handleNotificationClick = () => {
-    setActiveTab('notifications');
     navigate('/notifications');
   };
 
